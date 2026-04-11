@@ -1,0 +1,10 @@
+# Secrets
+Secrets.plist
+Tech.AI/Secrets.plist
+Secrets.xcconfig
+
+# Xcode user/build files
+*.xcuserdata
+*.xcuserstate
+DerivedData/
+build/
