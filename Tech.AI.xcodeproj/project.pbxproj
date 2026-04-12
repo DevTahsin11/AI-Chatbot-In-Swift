@@ -29,33 +29,9 @@
 		24AB9A5B2DF3CC5A0063D669 /* Tech.AIUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Tech.AIUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		24714BCC2F89727400C90ADC /* Exceptions for "Tech.AI" folder in "Tech.AI" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				.gitignore,
-			);
-			target = 24AB9A402DF3CC570063D669 /* Tech.AI */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
-/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-		24714BCD2F89727400C90ADC /* Exceptions for "Tech.AI" folder in "Compile Sources" phase from "Tech.AI" target */ = {
-			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
-			buildPhase = 24AB9A3D2DF3CC570063D669 /* Sources */;
-			membershipExceptions = (
-				.gitignore,
-			);
-		};
-/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		24AB9A432DF3CC570063D669 /* Tech.AI */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				24714BCC2F89727400C90ADC /* Exceptions for "Tech.AI" folder in "Tech.AI" target */,
-				24714BCD2F89727400C90ADC /* Exceptions for "Tech.AI" folder in "Compile Sources" phase from "Tech.AI" target */,
-			);
 			path = Tech.AI;
 			sourceTree = "<group>";
 		};
