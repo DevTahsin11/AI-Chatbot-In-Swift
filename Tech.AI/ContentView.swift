@@ -9,107 +9,136 @@ import SwiftUI
 import Speech
 import AVFoundation
 
-// Struct for chat message
-struct ChatMessage: Identifiable {
-    let id = UUID()
-    let text: String
-    let isUser: Bool
-}
-
 struct ContentView: View {
-    
-    // Chat Variables
-    @State private var messages: [ChatMessage] = []
-    @State private var inputText = ""
-    @State private var isLoading = false
-    
+
+    // Chat state (messages, input, streaming) lives in the view model.
+    @State private var viewModel = ChatViewModel()
+
     // Voice-To-Text Variables
     @State private var isRecording = false
     @State private var speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     @State private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     @State private var recognitionTask: SFSpeechRecognitionTask?
     @State private var audioEngine = AVAudioEngine()
-    
-    // Chat History (to send full conversation)
-    @State private var chatHistory: [[String: String]] = [
-        ["role": "system", "content": "You are a highly intelligent assistant and tutor that specializes in Computer Science."]
-    ]
-    
+
     var body: some View {
-        
-        VStack {
-            
-            // Chat messages scroll view
+        NavigationStack {
+            VStack(spacing: 0) {
+                messagesScroll
+                inputBar
+            }
+            .navigationTitle("Tech.AI")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(role: .destructive) {
+                        withAnimation { viewModel.clearChat() }
+                    } label: {
+                        Label("Clear Chat", systemImage: "trash")
+                            .font(.subheadline)
+                            
+                    }
+                    .glassButtonStyle(tint: .red)
+                    .disabled(viewModel.isStreaming || viewModel.messages.isEmpty)
+                    .accessibilityIdentifier("clearButton")
+                    .accessibilityLabel("Clear chat")
+                }
+            }
+        }
+    }
+
+    // Chat messages scroll view — auto-scrolls to the newest content
+    // as tokens stream in.
+    private var messagesScroll: some View {
+        ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(messages) { message in
-                        HStack {
-                            if message.isUser { Spacer() }
-                            Text(message.text)
-                                .padding()
-                                .background(message.isUser ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2))
-                                .cornerRadius(8)
-                            if message.isUser == false
-                            {
-                                Spacer()
-                            }
-                        }
+                    ForEach(viewModel.messages) { message in
+                        MessageBubble(message: message)
+                            .id(message.id)
                     }
                 }
                 .padding()
             }
-            
-            // Input field and send button
-            HStack {
-                TextField("Ask Anything About Computer Science...", text: $inputText)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                
-                Button(action: {
-                    Task {
-                        await sendMessage()
-                    }
-                }) {
-                    if isLoading {
-                        ProgressView()
-                    } else {
-                        Text("Send")
+            .onChange(of: viewModel.messages.last?.text) { _, _ in
+                guard let id = viewModel.messages.last?.id else { return }
+                if viewModel.isStreaming {
+                    proxy.scrollTo(id, anchor: .bottom)
+                } else {
+                    withAnimation {
+                        proxy.scrollTo(id, anchor: .bottom)
                     }
                 }
-                .disabled(inputText.isEmpty || isLoading)
-                
-                Button(action: {
+            }
+        }
+    }
+
+    // Bottom control bar: glass capsule input field + voice + send,
+    // grouped in a GlassEffectContainer so their shapes blend together.
+    private var inputBar: some View {
+        inputBarContainer {
+            HStack(spacing: 8) {
+
+                // Message box
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(.secondary)
+                    TextField("Ask Anything About Computer Science...", text: $viewModel.inputText)
+                        .textFieldStyle(.plain)
+                        .submitLabel(.send)
+                        .onSubmit { Task { await viewModel.sendMessage() } }
+                        .accessibilityIdentifier("messageField")
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .inputSurface()
+
+                // Voice button
+                Button {
                     if isRecording {
                         stopRecording()
                     } else {
                         startRecording()
                     }
-                }) {
+                } label: {
                     Image(systemName: isRecording ? "mic.fill" : "mic")
-                        .font(.system(size: 30))
-                        .foregroundColor(isRecording ? .red : .blue)
+                        .font(.system(size: 18, weight: .semibold))
+                        .symbolEffect(.pulse, isActive: isRecording)
                 }
-                .padding(.bottom, 8)
+                .glassButtonStyle(tint: isRecording ? .red : .blue)
+                .accessibilityLabel(isRecording ? "Stop voice input" : "Start voice input")
+
+                // Send button — primary action
+                Button {
+                    Task { await viewModel.sendMessage() }
+                } label: {
+                    if viewModel.isStreaming {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 18, weight: .semibold))
+                    }
+                }
+                .prominentGlassButtonStyle(tint: .blue)
+                .disabled(viewModel.inputText.isEmpty || viewModel.isStreaming)
+                .accessibilityIdentifier("sendButton")
+                .accessibilityLabel("Send")
             }
-            .padding()
-            
-            
-            Button(action: clearChat) {
-                Text("Clear Chat")
-                    .foregroundColor(.red)
-                    .padding(8)
-                    .background(Color.gray.opacity(0.1))
-                    .cornerRadius(8)
-            }
-            .padding(.bottom, 8)
         }
+        .padding(.horizontal)
+        .padding(.bottom, 8)
     }
-    
-    // Function To Clear All Messages In Chat
-    func clearChat() {
-        messages = []
-        chatHistory = [
-            ["role": "system", "content": "You are a highly intelligent assistant and tutor that specializes in Computer Science."]
-        ]
+
+    // Wraps the bar in a GlassEffectContainer where available so multiple
+    // glass shapes render efficiently and blend; passes content through
+    // unchanged on older systems.
+    @ViewBuilder
+    private func inputBarContainer<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        if #available(iOS 26, *) {
+            GlassEffectContainer(spacing: 8) { content() }
+        } else {
+            content()
+        }
     }
 
     // Function To Start Recording (Subject To Change)
@@ -122,7 +151,7 @@ struct ContentView: View {
                 {
                     self.isRecording = true
                 }
-                
+
                 self.recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
                 let audioSession = AVAudioSession.sharedInstance()
                 do {
@@ -131,16 +160,16 @@ struct ContentView: View {
                 } catch {
                     print("Audio session error: \(error)")
                 }
-                
+
                 let inputNode = audioEngine.inputNode
-                
+
                 guard let recognitionRequest = recognitionRequest
                 else
                 {
                     fatalError("Unable to create recognition request")
                 }
                 recognitionRequest.shouldReportPartialResults = false
-                
+
                 self.recognitionTask = self.speechRecognizer?.recognitionTask(with: recognitionRequest)
                 {result, error in
                     if let result = result
@@ -149,13 +178,13 @@ struct ContentView: View {
                         print("Recognized: \(spokenText)")
                         DispatchQueue.main.async
                         {
-                            self.inputText = spokenText
+                            self.viewModel.inputText = spokenText
                             Task {
-                                await self.sendMessage()
+                                await self.viewModel.sendMessage()
                             }
                         }
                     }
-                    
+
                     if error != nil || (result?.isFinal ?? false)
                     {
                         self.audioEngine.stop()
@@ -168,13 +197,13 @@ struct ContentView: View {
                         }
                     }
                 }
-                
+
                 let recordingFormat = inputNode.outputFormat(forBus: 0)
                 inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat)
                 {buffer, when in
                     self.recognitionRequest?.append(buffer)
                 }
-                
+
                 self.audioEngine.prepare()
                 do {
                     try self.audioEngine.start()
@@ -195,76 +224,6 @@ struct ContentView: View {
         audioEngine.inputNode.removeTap(onBus: 0)
         recognitionRequest?.endAudio()
         isRecording = false
-    }
-    
-    // Sends the message and calls fetchAIResponse (Subject To Change)
-    func sendMessage() async {
-        let userMessage = ChatMessage(text: inputText, isUser: true)
-        messages.append(userMessage)
-        
-        // Add to chat history
-        chatHistory.append(["role": "user", "content": inputText])
-        
-        isLoading = true
-        
-        do {
-            let responseText = try await fetchAIResponse()
-            
-            // Update UI on main thread
-            DispatchQueue.main.async {
-                let aiMessage = ChatMessage(text: responseText, isUser: false)
-                messages.append(aiMessage)
-                
-                // Add AI message to chat history
-                chatHistory.append(["role": "assistant", "content": responseText])
-                
-                isLoading = false
-                inputText = ""
-            }
-        } catch {
-            DispatchQueue.main.async {
-                messages.append(ChatMessage(text: "Error: \(error.localizedDescription)", isUser: false))
-                isLoading = false
-            }
-        }
-    }
-    
-    // Fetches AI response using async/await (Subject To Change)
-    func fetchAIResponse() async throws -> String {
-        
-        // API Call
-        guard let url = URL(string: "https://api.openai.com/v1/chat/completions")
-        else {
-            throw URLError(.badURL)
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(AppConfig.openAIAPIKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        let body: [String: Any] = [
-            "model": "gpt-4.1",
-            "messages": chatHistory
-        ]
-        
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        
-        let (data, _) = try await URLSession.shared.data(for: request)
-        
-        // Debug print of raw response
-        if let rawJSON = String(data: data, encoding: .utf8) {
-            print("Raw response: \(rawJSON)")
-        }
-        
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let choices = json["choices"] as? [[String: Any]],
-              let message = choices.first?["message"] as? [String: Any],
-              let content = message["content"] as? String else {
-            throw NSError(domain: "InvalidResponse", code: -1, userInfo: nil)
-        }
-        
-        return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
